@@ -1,127 +1,8 @@
-(function () {
-  'use strict';
-
-  /* ------------------------------------------------------------------ *
-   *  License Key System (Local Keys)
-   * ------------------------------------------------------------------ */
-  var PF_KEY_LS    = 'pbz_pf_key';
-  var PF_TOKEN_LS  = 'pbz_pf_token';
-  var PF_EXP_LS    = 'pbz_pf_exp';
-  var PF_CACHE_MS  = 1 * 3600 * 1000;
-
-  var PF_LOCAL_KEYS = [
-    'PBBLAZEPMIUM', 'PBBLAZEPREMIUM3DAY', 'AKBAR', 'PBZ-EFGH-5678', 'PBZ-IJKL-9012',
-    'my key 123', 'PBBLAZEPREMIUM7DAY', 'EXPIREDTGGL7', 'PBBLAZE7DAY'
-  ];
-
-  function pfGet(k, d) { try { var v = localStorage.getItem(k); return v == null ? d : v; } catch (e) { return d; } }
-  function pfSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
-
-  function pfValidate(key, cb) {
-    var target = String(key).trim();
-    if (!target) { cb(false, 'invalid'); return; }
-    var ok = PF_LOCAL_KEYS.some(function (k) { return k === target; });
-    if (ok) { pfSet(PF_TOKEN_LS, 'ok_' + Date.now()); pfSet(PF_EXP_LS, String(Date.now() + PF_CACHE_MS)); cb(true); }
-    else cb(false, 'invalid');
-  }
-  function pfCacheValid() {
-    var tok = pfGet(PF_TOKEN_LS, '');
-    var exp = parseInt(pfGet(PF_EXP_LS, '0'), 10) || 0;
-    return !!(tok && exp > Date.now());
-  }
-
-  function pfPrompt(title, msg, cb) {
-    function mk() {
-      try {
-        var wrap = document.createElement('div');
-        wrap.setAttribute('data-pf-prompt', '1');
-        wrap.style.cssText = 'position:fixed;inset:0;background:rgba(24,24,27,.75);z-index:2147483647;display:flex;align-items:center;justify-content:center;font:13px/1.4 "Segoe UI",Tahoma,sans-serif';
-        var box = document.createElement('div');
-        box.style.cssText = 'background:#18181b;border:1px solid #27272a;border-radius:12px;padding:18px 18px 14px;width:min(340px,90vw);box-shadow:0 20px 50px rgba(0,0,0,.75);color:#e8e8e8';
-        var t = document.createElement('div');
-        t.textContent = title;
-        t.style.cssText = 'font-weight:800;font-size:14px;margin-bottom:6px;color:#4ade80';
-        var m = document.createElement('div');
-        m.textContent = msg;
-        m.style.cssText = 'color:#a1a1aa;margin-bottom:10px;font-size:12px;line-height:1.5';
-        var inp = document.createElement('input');
-        inp.type = 'text'; inp.placeholder = 'Masukkan License Key';
-        inp.style.cssText = 'width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #3f3f46;border-radius:8px;font:13px monospace;outline:none;background:#27272a;color:#fff';
-        var row = document.createElement('div');
-        row.style.cssText = 'display:flex;gap:8px;margin-top:12px';
-        var btnOk = document.createElement('button');
-        btnOk.textContent = 'Aktifkan';
-        btnOk.style.cssText = 'flex:1;padding:9px 0;border:0;border-radius:8px;background:#4ade80;color:#18181b;font-weight:800;cursor:pointer;font-size:12px';
-        var btnNo = document.createElement('button');
-        btnNo.textContent = 'Batal';
-        btnNo.style.cssText = 'flex:0 0 84px;padding:9px 0;border:1px solid #3f3f46;border-radius:8px;background:#27272a;color:#a1a1aa;font-weight:700;cursor:pointer;font-size:12px';
-        var st = document.createElement('div');
-        st.style.cssText = 'margin-top:8px;font-size:11px;color:#ef4444;min-height:14px';
-        row.appendChild(btnOk); row.appendChild(btnNo);
-        box.appendChild(t); box.appendChild(m); box.appendChild(inp);
-        box.appendChild(row); box.appendChild(st);
-        wrap.appendChild(box);
-        (document.body || document.documentElement).appendChild(wrap);
-        setTimeout(function () { try { inp.focus(); } catch (e) {} }, 60);
-        function close() { try { wrap.remove(); } catch (e) {} }
-        btnNo.addEventListener('click', function () { close(); cb(null); });
-        function submit() {
-          var k = (inp.value || '').trim();
-          if (!k) { st.style.color = '#ef4444'; st.textContent = 'Key tidak boleh kosong'; return; }
-          st.style.color = '#4ade80'; st.textContent = 'Memverifikasi…';
-          btnOk.disabled = true; btnOk.style.opacity = '.7';
-          pfValidate(k, function (ok) {
-            btnOk.disabled = false; btnOk.style.opacity = '1';
-            if (ok) { pfSet(PF_KEY_LS, k); close(); cb(k); }
-            else { st.style.color = '#ef4444'; st.textContent = 'Key tidak valid'; }
-          });
-        }
-        btnOk.addEventListener('click', submit);
-        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') submit(); });
-      } catch (e) { cb(null); }
-    }
-    if (document.body) mk();
-    else document.addEventListener('DOMContentLoaded', mk, { once: true });
-  }
-
-  function pfGate() {
-    if (pfCacheValid()) { bootCore(); startLicenseWatcher(); return; }
-    var saved = pfGet(PF_KEY_LS, '');
-    if (saved) {
-      pfValidate(saved, function (ok) {
-        if (ok) { bootCore(); startLicenseWatcher(); }
-        else pfPrompt('License Required', 'Key tersimpan tidak valid. Masukkan key baru.', function (k) { if (k) { bootCore(); startLicenseWatcher(); } });
-      });
-    } else {
-      pfPrompt('License Required', 'Masukkan License Key PBBLAZE untuk melanjutkan.', function (k) { if (k) { bootCore(); startLicenseWatcher(); } });
-    }
-  }
-
-  var __pfWatcherStarted = false;
-  function startLicenseWatcher() {
-    if (__pfWatcherStarted) return;
-    __pfWatcherStarted = true;
-    setInterval(function () {
-      try {
-        if (pfCacheValid()) return;
-        var existing = document.querySelector('div[data-pf-prompt="1"]');
-        if (existing) return;
-        pfPrompt('License Expired', 'Sesi 1 jam kamu sudah habis. Masukkan License Key lagi untuk melanjutkan.',
-          function (k) {
-            if (k) {
-              __pfWatcherStarted = false;
-              startLicenseWatcher();
-            } else {
-              setTimeout(function () { if (!pfCacheValid()) { try { startLicenseWatcher(); } catch (e) {} } }, 5000);
-            }
-          });
-      } catch (e) {}
-    }, 30000);
-  }
-
-  /* ------------------------------------------------------------------ *
-   *  Core Logic Start
-   * ------------------------------------------------------------------ */
+/*
+ * IRILMODZ PBBLAZE CORE (remote) — dimuat oleh loader Tampermonkey
+ * Update file ini di GitHub = semua user otomatis dapat versi baru.
+ * Jalankan hanya jika loader sudah validasi license (window.__pbzLicensed).
+ */
   function bootCore() {
     var DURATION_MS = 60 * 60 * 1000;
     var T0_KEY = 'pbz_t0';
@@ -1255,5 +1136,9 @@
     }
   }
 
-  pfGate();
-})();
+if (!window.__pbzLicensed) {
+  // Diload langsung (bukan via loader) -> jalan tetap, tanpa license gate
+  bootCore();
+} else {
+  bootCore();
+}
